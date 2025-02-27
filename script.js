@@ -1,203 +1,134 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.146/build/three.module.js';
+// Global Variables
+let scene, camera, renderer;
+let ground, player;
+let obstacles = [];
+let obstacleSpawnInterval = 2000; // in ms
+let lastObstacleTime = 0;
+let gameSpeed = 0.2;
+let laneWidth = 4;
+let currentLane = 0; // 0: center; -1: left; 1: right
 
-// Scene তৈরি করুন
-const scene = new THREE.Scene();
+// Initialize Scene
+function init() {
+  const container = document.getElementById("game-container");
+  
+  // Scene and Camera
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x000000, 0.002);
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 5, 10);
+  
+  // Renderer
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  container.appendChild(renderer.domElement);
+  
+  // Light
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+  scene.add(ambientLight);
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+  directionalLight.position.set(0, 10, 5);
+  scene.add(directionalLight);
+  
+  // Ground (a large plane that moves)
+  const groundGeometry = new THREE.PlaneGeometry(20, 1000);
+  const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x444444 });
+  ground = new THREE.Mesh(groundGeometry, groundMaterial);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.z = -400;
+  scene.add(ground);
+  
+  // Player (a simple cube)
+  const playerGeometry = new THREE.BoxGeometry(1, 2, 1);
+  const playerMaterial = new THREE.MeshPhongMaterial({ color: 0x00ffff });
+  player = new THREE.Mesh(playerGeometry, playerMaterial);
+  player.position.set(0, 1, 5);
+  scene.add(player);
+  
+  // Handle window resize
+  window.addEventListener("resize", onWindowResize, false);
+  
+  // Handle player input (arrow keys)
+  window.addEventListener("keydown", handleKeyDown, false);
+  
+  animate();
+}
 
-// ক্যামেরা তৈরি করুন
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 3, 10);
+// Window resize handler
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
 
-// Renderer তৈরি করুন
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+// Handle arrow keys for lane change
+function handleKeyDown(e) {
+  if (e.key === "ArrowLeft" && currentLane > -1) {
+    currentLane--;
+  } else if (e.key === "ArrowRight" && currentLane < 1) {
+    currentLane++;
+  }
+  // Smooth transition to lane
+  const targetX = currentLane * laneWidth;
+  // Tweening can be used here; for simplicity, set directly:
+  player.position.x = targetX;
+}
 
-// মাটির জন্য প্লেন তৈরি করুন
-const groundGeometry = new THREE.PlaneGeometry(10, 100);
-const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x555555, side: THREE.DoubleSide });
-const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-ground.rotation.x = -Math.PI / 2;
-scene.add(ground);
-
-// প্লেয়ার তৈরি করুন (Cube হিসেবে)
-const playerGeometry = new THREE.BoxGeometry(1, 2, 1);
-const playerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-const player = new THREE.Mesh(playerGeometry, playerMaterial);
-player.position.y = 1;
-scene.add(player);
+// Spawn obstacles (simple boxes) ahead on random lanes
+function spawnObstacle() {
+  const obstacleGeometry = new THREE.BoxGeometry(2, 2, 2);
+  const obstacleMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+  const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+  
+  // Random lane: -1, 0, or 1
+  const lane = [-1, 0, 1][Math.floor(Math.random() * 3)];
+  obstacle.position.x = lane * laneWidth;
+  obstacle.position.y = 1;
+  obstacle.position.z = -400; // start at the far end of ground
+  
+  scene.add(obstacle);
+  obstacles.push(obstacle);
+}
 
 // Animation loop
-function animate() {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
-}
-
-animate();
-document.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowLeft" && player.position.x > -3) {
-        player.position.x -= 3; // বাঁ দিকে যাওয়া
+function animate(timestamp) {
+  requestAnimationFrame(animate);
+  
+  // Move ground towards the camera to simulate running
+  ground.position.z += gameSpeed;
+  if (ground.position.z > 50) {
+    ground.position.z = -400;
+  }
+  
+  // Move obstacles
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    obstacles[i].position.z += gameSpeed;
+    // Collision detection with player
+    if (obstacles[i].position.z > player.position.z - 1 &&
+        obstacles[i].position.z < player.position.z + 1 &&
+        Math.abs(obstacles[i].position.x - player.position.x) < 1.5) {
+      // Collision occurred
+      console.log("Game Over!");
+      // Here you can implement a restart or game over screen
+      // For now, stop the game
+      return;
     }
-    if (event.key === "ArrowRight" && player.position.x < 3) {
-        player.position.x += 3; // ডান দিকে যাওয়া
+    // Remove obstacles that passed the camera
+    if (obstacles[i].position.z > camera.position.z + 10) {
+      scene.remove(obstacles[i]);
+      obstacles.splice(i, 1);
     }
-    if (event.key === "ArrowUp") {
-        player.position.y += 3; // লাফ দেওয়া
-        setTimeout(() => { player.position.y -= 3; }, 300);
-    }
-});
-const obstacles = [];
-
-function createObstacle() {
-    const obstacleGeometry = new THREE.BoxGeometry(2, 2, 2);
-    const obstacleMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
-    obstacle.position.set((Math.random() - 0.5) * 6, 1, -50);
-    scene.add(obstacle);
-    obstacles.push(obstacle);
+  }
+  
+  // Spawn new obstacles at intervals
+  if (!lastObstacleTime) lastObstacleTime = timestamp;
+  if (timestamp - lastObstacleTime > obstacleSpawnInterval) {
+    spawnObstacle();
+    lastObstacleTime = timestamp;
+  }
+  
+  renderer.render(scene, camera);
 }
 
-setInterval(createObstacle, 2000); // প্রতি 2 সেকেন্ডে নতুন বাধা তৈরি
-
-function updateObstacles() {
-    obstacles.forEach((obstacle, index) => {
-        obstacle.position.z += 0.5;
-        if (obstacle.position.z > 10) {
-            scene.remove(obstacle);
-            obstacles.splice(index, 1);
-        }
-    });
-}
-
-function animate() {
-    requestAnimationFrame(animate);
-    updateObstacles();
-    renderer.render(scene, camera);
-}
-
-animate();
-let speed = 0.5;
-
-function moveGround() {
-    ground.position.z += speed;
-    if (ground.position.z > 50) {
-        ground.position.z = -50; // রাস্তা লুপ করবে
-    }
-}
-
-function increaseSpeed() {
-    speed += 0.01; // ধীরে ধীরে গতি বাড়বে
-}
-
-setInterval(increaseSpeed, 5000); // প্রতি ৫ সেকেন্ডে গতি বাড়বে
-
-function animate() {
-    requestAnimationFrame(animate);
-    moveGround();
-    updateObstacles();
-    renderer.render(scene, camera);
-}
-
-animate();
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.146/build/three.module.js';
-
-// 🎮 Scene তৈরি করা
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 3, 10);
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
-
-// 🛤️ রাস্তা তৈরি করা
-const groundGeometry = new THREE.PlaneGeometry(10, 100);
-const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x555555, side: THREE.DoubleSide });
-const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-ground.rotation.x = -Math.PI / 2;
-scene.add(ground);
-
-// 🏃 প্লেয়ার তৈরি করা
-const playerGeometry = new THREE.BoxGeometry(1, 2, 1);
-const playerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-const player = new THREE.Mesh(playerGeometry, playerMaterial);
-player.position.y = 1;
-scene.add(player);
-
-// 🎮 প্লেয়ার মুভমেন্ট (Arrow Keys)
-document.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowLeft" && player.position.x > -3) {
-        player.position.x -= 3;
-    }
-    if (event.key === "ArrowRight" && player.position.x < 3) {
-        player.position.x += 3;
-    }
-    if (event.key === "ArrowUp") {
-        player.position.y += 3;
-        setTimeout(() => { player.position.y -= 3; }, 300);
-    }
-});
-
-// 🚧 বাধা (Obstacles) তৈরি করা
-const obstacles = [];
-function createObstacle() {
-    const obstacleGeometry = new THREE.BoxGeometry(2, 2, 2);
-    const obstacleMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
-    obstacle.position.set((Math.random() - 0.5) * 6, 1, -50);
-    scene.add(obstacle);
-    obstacles.push(obstacle);
-}
-setInterval(createObstacle, 2000);
-
-// 🪙 কয়েন ও স্কোর সিস্টেম
-let score = 0;
-const coins = [];
-function createCoin() {
-    const coinGeometry = new THREE.SphereGeometry(0.5, 16, 16);
-    const coinMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-    const coin = new THREE.Mesh(coinGeometry, coinMaterial);
-    coin.position.set((Math.random() - 0.5) * 6, 1, -50);
-    scene.add(coin);
-    coins.push(coin);
-}
-setInterval(createCoin, 3000);
-
-// 🎮 আপডেট ফাংশন (রাস্তা, বাধা, কয়েন আপডেট করা)
-let speed = 0.5;
-function updateObjects() {
-    ground.position.z += speed;
-    if (ground.position.z > 50) ground.position.z = -50;
-    
-    obstacles.forEach((obstacle, index) => {
-        obstacle.position.z += speed;
-        if (obstacle.position.z > 10) {
-            scene.remove(obstacle);
-            obstacles.splice(index, 1);
-        }
-    });
-
-    coins.forEach((coin, index) => {
-        coin.position.z += speed;
-        if (coin.position.z > 10) {
-            scene.remove(coin);
-            coins.splice(index, 1);
-        }
-        if (player.position.distanceTo(coin.position) < 1.5) {
-            score += 10;
-            console.log("Score:", score);
-            scene.remove(coin);
-            coins.splice(index, 1);
-        }
-    });
-}
-
-// 🔄 গতি বাড়ানো
-setInterval(() => { speed += 0.01; }, 5000);
-
-// 🏃‍♂️ Animation Loop
-function animate() {
-    requestAnimationFrame(animate);
-    updateObjects();
-    renderer.render(scene, camera);
-}
-
-animate();
+// Start the game
+init();
